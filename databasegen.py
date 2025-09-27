@@ -39,7 +39,16 @@ for customer in customers:
     n_checking = random.randint(1, 3)
     n_savings = random.randint(0, 3)
     saved = np.random.uniform(0, 0.4)
-    for _ in range(n_checking):
+
+    checking_portions = np.random.dirichlet(np.ones(n_checking)) * (1 - saved)
+    
+    # Randomly split savings portion (saved) across n_savings accounts (if any)
+    if n_savings > 0:
+        savings_portions = np.random.dirichlet(np.ones(n_savings)) * saved
+    else:
+        savings_portions = []
+    
+    for portion in checking_portions:
         accounts.append({
             "customer_id": cust_id,
             "account_id": account_id_counter,
@@ -48,7 +57,7 @@ for customer in customers:
             "salary_portion": 1-saved
         })
         account_id_counter += 1
-    for _ in range(n_savings):
+    for portion in checking_portions:
         accounts.append({
             "customer_id": cust_id,
             "account_id": account_id_counter,
