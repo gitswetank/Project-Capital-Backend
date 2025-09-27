@@ -54,17 +54,18 @@ for customer in customers:
             "account_id": account_id_counter,
             "type": "checking",
             "balance": round(random.uniform(50000, 200000), 2),
-            "salary_portion": 1-saved
+            "interest":0,
+            "salary_portion": portion
         })
         account_id_counter += 1
-    for portion in checking_portions:
+    for portion in savings_portions:
         accounts.append({
             "customer_id": cust_id,
             "account_id": account_id_counter,
             "type": "savings",
             "balance": round(random.uniform(5000, 10000), 2),
-            "interest": np.random.uniform(0, 0.12),
-            "salary_portion":saved
+            "interest": np.random.uniform(0, 0.01),
+            "salary_portion":portion
         })
         account_id_counter += 1
 
