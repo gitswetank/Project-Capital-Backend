@@ -3,6 +3,8 @@ from faker import Faker
 import numpy as np
 from pymongo import MongoClient
 import random
+from datetime import datetime, timedelta
+
 
 fake = Faker()
 N_CUSTOMERS = 999
@@ -18,7 +20,9 @@ for cid in range(1, N_CUSTOMERS + 1):
         "customer_id": 100000+(start_cid+cid) % N_CUSTOMERS,
         "name": name,
         "username": username+username_suffix,
-        "password": "12345_"+str(len(name.split()[0]))
+        "password": "12345_"+str(len(name.split()[0])),
+        "salary": round((np.random.normal(loc=70000, scale=20000)/12)/12, 2),
+        "raise": np.random.uniform(0, 0.02)
     })
 
 df_customers = pd.DataFrame(customers)
@@ -29,17 +33,19 @@ df_customers.to_csv("customers.csv", index=False)
 
 accounts = []
 
-account_id_counter = 1
+account_id_counter = 10000
 for customer in customers:
     cust_id = customer["customer_id"]
     n_checking = random.randint(1, 3)
     n_savings = random.randint(0, 3)
+    saved = np.random.uniform(0, 0.4)
     for _ in range(n_checking):
         accounts.append({
             "customer_id": cust_id,
             "account_id": account_id_counter,
             "type": "checking",
-            "balance": round(random.uniform(5000, 10000), 2)
+            "balance": round(random.uniform(50000, 200000), 2),
+            "salary_portion": 1-saved
         })
         account_id_counter += 1
     for _ in range(n_savings):
@@ -47,29 +53,89 @@ for customer in customers:
             "customer_id": cust_id,
             "account_id": account_id_counter,
             "type": "savings",
-            "balance": round(random.uniform(5000, 10000), 2)
+            "balance": round(random.uniform(5000, 10000), 2),
+            "interest": np.random.uniform(0, 0.12),
+            "salary_portion":saved
         })
         account_id_counter += 1
 
+transactions = []
+
+low_spending_cat = ['food', 'entertainment', 'utilities', 'transportation', 'shopping', 'miscellaneous']
+high_spending_cat = ['housing', 'education', 'healthcare']
+card_type = ["credit", "debit"]
+
+start_date = datetime(1994, 1, 1)   # start year = 1994
+days = 365                          # simulate 1 yea
+
+
+# spending distributions
+
+
+for act in accounts:
+    if act["type"] == "checking":
+        # Pick type of transaction
+        for d in range(days):
+            date = start_date + timedelta(days=d)
+            small_beta = np.random.beta(a=3, b=50) * 1000
+            big_beta   = np.random.beta(a=5, b=1)  * 1500
+            for _ in range(np.random.randint(1, 5)):  # 3 transactions per day
+                tx_type = np.random.choice(["spend_credit", "deposit_debit", "spend_debit"], 
+                                           p=[0.85, 0.075, 0.075])
+                
+                if tx_type == "spend_credit":
+                    if np.random.rand() < 0.05:  # 5% chance of big spending
+                        category = random.choice(high_spending_cat)
+                        amount = -big_beta
+                    else:
+                        category = random.choice(low_spending_cat)
+                        amount = -small_beta
+                    card = "credit"
+
+                elif tx_type == "deposit_debit":
+                    category = "deposit"
+                    amount = abs(np.random.normal(1000, 300))  # deposit amount
+                    card = "debit"
+
+                else:  # spend_debit
+                    category = random.choice(low_spending_cat)
+                    amount = -small_beta
+                    card = "debit"
+                
+                transactions.append({
+                    "account_id": act["account_id"],
+                    "category": category,
+                    "amount": round(float(amount), 2),
+                    "card_type": card,
+                    "date": date.strftime("%Y-%m-%d")
+
+                })
+
+
+
+
+customers_df = pd.DataFrame(customers)
 accounts_df = pd.DataFrame(accounts)
+transactions_df = pd.DataFrame(transactions)
+
+customers_df.to_csv("customers.csv", index=False)
 accounts_df.to_csv("accounts.csv", index=False)
+transactions_df.to_csv("transactions.csv", index=False)
 
-
-# --- Connect to MongoDB ---
 client = MongoClient("mongodb://localhost:27017")
-db = client["bank_db"]  # database name
+db = client["bank_db"]
+
 
 # --- Load CSVs ---
-customers_df = pd.read_csv("customers.csv")
-accounts_df = pd.read_csv("accounts.csv")
-
-# --- Convert to dicts ---
-customers_data = customers_df.to_dict(orient="records")
-accounts_data = accounts_df.to_dict(orient="records")
+customers_data = pd.read_csv("customers.csv").to_dict(orient="records")
+accounts_data = pd.read_csv("accounts.csv").to_dict(orient="records")
+transactions_data = pd.read_csv("transactions.csv").to_dict(orient="records")
 
 # --- Insert into MongoDB ---
-db.customers.drop()  # drop existing collection if any
+db.customers.drop()
 db.accounts.drop()
+db.transactions.drop()
 
 db.customers.insert_many(customers_data)
 db.accounts.insert_many(accounts_data)
+db.transactions.insert_many(transactions_data)
