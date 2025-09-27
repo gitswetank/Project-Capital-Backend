@@ -26,4 +26,9 @@ mongosh
 
 use bank_db
 
+
+# Run the backend
+
+fastapi dev main.py
+
 show collections
