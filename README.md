@@ -21,6 +21,9 @@ sudo apt install -y mongodb-mongosh
 
 
 # To open the Mongo DB Database
+
 mongosh
+
 use bank_db
+
 show collections
