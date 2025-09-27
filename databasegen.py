@@ -21,7 +21,7 @@ for cid in range(1, N_CUSTOMERS + 1):
         "name": name,
         "username": username+username_suffix,
         "password": "12345_"+str(len(name.split()[0])),
-        "salary": round((np.random.normal(loc=70000, scale=20000)/12)/12, 2),
+        "salary": round((np.random.normal(loc=70000, scale=20000)/12), 2),
         "raise": np.random.uniform(0, 0.02)
     })
 
