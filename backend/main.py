@@ -158,13 +158,13 @@ async def transactions(
     # if not account_ids:
     #     return []  # No accounts, return empty list
 
-    # 2. Get all transactions for these accounts
+    # s
     # transactions = list(
     #     db.transactions.find({"account_id": {"$in": [11782, 11783, 11784]}}).sort("date", 1)
     # )
 
     pipeline = [
-        {"$match": {"customer_id": user}},  # matches your user_id
+        {"$match": {"customer_id": user}},  
         {"$lookup": {
             "from": "transactions",
             "localField": "account_id",
@@ -174,12 +174,139 @@ async def transactions(
         {"$unwind": "$transactions"},
         {"$replaceRoot": {"newRoot": "$transactions"}},
         {"$set": {"_id": {"$toString": "$_id"}}},
-        {"$sort": {"transaction_date": -1}},  # use your actual date field
+        {"$sort": {"transaction_date": -1}},  
         {"$limit": 15}
     ]
 
     transactions = list(db.accounts.aggregate(pipeline))
     return json.loads(json_util.dumps(transactions))
+
+@app.get("/{user}/spending/cummulative")
+async def cummulative(    
+    user: int,
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    db=Depends(get_db)
+):
+    pipeline = [
+        {"$match": {"customer_id": user, "type": "checking"}},
+        {"$lookup": {
+            "from": "transactions",
+            "localField": "account_id",
+            "foreignField": "account_id",
+            "as": "transactions"
+        }},
+        {"$unwind": "$transactions"},
+        {"$match": {
+            "transactions.amount": {"$lt": 0},           
+            "transactions.date": {"$gte": start_date, "$lte": end_date}
+        }},
+        {"$group": {
+            "_id": "$transactions.date",                 
+            "daily_total": {"$sum": "$transactions.amount"}
+        }},
+        {"$sort": {"_id": 1}},
+        {"$project": {
+            "date": "$_id",
+            "daily_total": 1,
+            "_id": 0
+        }}
+    ]
+
+    results = list(db.accounts.aggregate(pipeline))
+
+    # Compute cumulative sum
+    cumulative = []
+    running_total = 0
+    for r in results:
+        running_total += r["daily_total"]
+        cumulative.append({"date": r["date"], "cummulative_total": running_total})
+    return cumulative
+
+
+@app.get("/{user}/spending/cummulative/all")
+async def cummulative_all(    
+    user: int,
+    db=Depends(get_db)
+):
+    pipeline = [
+        {"$match": {"customer_id": user, "type": "checking"}},
+        {"$lookup": {
+            "from": "transactions",
+            "localField": "account_id",
+            "foreignField": "account_id",
+            "as": "transactions"
+        }},
+        {"$unwind": "$transactions"},
+        {"$match": {
+            "transactions.amount": {"$lt": 0}
+        }},
+        {"$group": {
+            "_id": "$transactions.date",                 
+            "daily_total": {"$sum": "$transactions.amount"}
+        }},
+        {"$sort": {"_id": 1}},
+        {"$project": {
+            "date": "$_id",
+            "daily_total": 1,
+            "_id": 0
+        }}
+    ]
+
+    results = list(db.accounts.aggregate(pipeline))
+
+    # Compute cumulative sum
+    cumulative = []
+    running_total = 0
+    for r in results:
+        running_total += r["daily_total"]
+        cumulative.append({"date": r["date"], "cummulative_total": running_total})
+    return cumulative
+
+@app.get("/{user}/spending/category/cummulative")
+async def cummulative_cat(    
+    user: int,
+    categories: List[str] = Query(..., description="List of categories"),
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    db=Depends(get_db)
+):
+    pipeline = [
+        {"$match": {"customer_id": user, "type": "checking"}},
+        {"$lookup": {
+            "from": "transactions",
+            "localField": "account_id",
+            "foreignField": "account_id",
+            "as": "transactions"
+        }},
+        {"$unwind": "$transactions"},
+        {"$match": {
+            "transactions.amount": {"$lt": 0},
+            "transactions.category": {"$in": categories},
+            "transactions.date": {"$gte": start_date, "$lte": end_date}
+        }},
+        {"$group": {
+            "_id": "$transactions.date",                 
+            "daily_total": {"$sum": "$transactions.amount"}
+        }},
+        {"$sort": {"_id": 1}},
+        {"$project": {
+            "date": "$_id",
+            "daily_total": 1,
+            "_id": 0
+        }}
+    ]
+
+    results = list(db.accounts.aggregate(pipeline))
+
+    # Compute cumulative sum
+    cumulative = []
+    running_total = 0
+    for r in results:
+        running_total += r["daily_total"]
+        cumulative.append({"date": r["date"], "cummulative_total": running_total})
+    return cumulative
+
 
 @app.get("/transactions/grocery")
 async def root():
