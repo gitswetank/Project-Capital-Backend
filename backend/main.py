@@ -223,12 +223,11 @@ async def transactions(
         {"$unwind": "$transactions"},
         {"$replaceRoot": {"newRoot": "$transactions"}},
         {"$set": {"_id": {"$toString": "$_id"}}},
-        {"$addFields": {"transaction_date_obj": {"$toDate": "$transaction_date"}}},
-        {"$sort": {"transaction_date_obj": 1}},  
-        {"$limit": 15}
+        {"$sort": {"transaction_date": -1}}  
+        # {"$limit": 15}
     ]
 
-    transactions = list(db.accounts.aggregate(pipeline))
+    transactions = list(db.accounts.aggregate(pipeline))[::-1][:15]
     return json.loads(json_util.dumps(transactions))
 
 @app.get("/{user}/spending/cummulative")
