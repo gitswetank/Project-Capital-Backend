@@ -4,7 +4,7 @@ from pymongo import MongoClient
 from bson import json_util
 import json
 from typing import List
-
+from collections import defaultdict
 
 
 app = FastAPI()
@@ -111,6 +111,55 @@ async def spending_per_category(
     results = list(db.accounts.aggregate(pipeline))
     return results
 
+# http://127.0.0.1:8000/100001/spending/category/selectcategories/cummulative?categories=food&categories=utilities&categories=healthcare&start_date=2027-01-01&end_date=2027-06-30
+@app.get("/{user}/spending/category/selectcategories/cummulative")
+async def spending_per_category_cuum(
+    user: int,
+    categories: List[str] = Query(..., description="List of categories"),
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    db=Depends(get_db)
+):
+    pipeline = [
+        {"$match": {"customer_id": user, "type": "checking"}},
+        {"$lookup": {
+            "from": "transactions",
+            "localField": "account_id",
+            "foreignField": "account_id",
+            "as": "transactions"
+        }},
+        {"$unwind": "$transactions"},
+        {"$match": {
+            "transactions.amount": {"$lt": 0},
+            "transactions.category": {"$in": categories},
+            "transactions.date": {"$gte": start_date, "$lte": end_date}
+        }},
+        {"$group": {
+            "_id": {"date": "$transactions.date", "category": "$transactions.category"},
+            "daily_total": {"$sum": "$transactions.amount"}
+        }},
+        {"$sort": {"_id.date": 1}}
+    ]
+
+    results = list(db.accounts.aggregate(pipeline))
+
+    # Organize by date
+    date_map = defaultdict(lambda: {cat: 0 for cat in categories})
+    for r in results:
+        date_map[r["_id"]["date"]][r["_id"]["category"]] = r["daily_total"]
+
+    # Compute cumulative sums
+    cumulative = []
+    running_totals = {cat: 0 for cat in categories}
+    for date in sorted(date_map.keys()):
+        daily = {}
+        for cat in categories:
+            running_totals[cat] += date_map[date].get(cat, 0)
+            daily[cat] = running_totals[cat]
+        cumulative.append({"date": date, **daily})
+
+    return cumulative
+
 @app.get("/{user}/spending/percategory/all")
 async def spending_per_category(
     user: int,
@@ -174,7 +223,8 @@ async def transactions(
         {"$unwind": "$transactions"},
         {"$replaceRoot": {"newRoot": "$transactions"}},
         {"$set": {"_id": {"$toString": "$_id"}}},
-        {"$sort": {"transaction_date": -1}},  
+        {"$addFields": {"transaction_date_obj": {"$toDate": "$transaction_date"}}},
+        {"$sort": {"transaction_date_obj": 1}},  
         {"$limit": 15}
     ]
 
