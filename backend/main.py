@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from bson import json_util
 import json
+from typing import List
+
 
 
 app = FastAPI()
@@ -73,6 +75,42 @@ async def spending_per_category(
 
     return results
 
+# http://127.0.0.1:8000/100001/spending/selectcategories?categories=food&categories=utilities&start_date=2027-01-01&end_date=2027-12-31
+@app.get("/{user}/spending/selectcategories")
+async def spending_per_category(
+    user: int,
+    categories: List[str] = Query(..., description="List of categories"),
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    db=Depends(get_db)
+):
+    start = start_date
+    end = end_date
+
+    pipeline = [
+        {"$match": {"customer_id": user, "type": "checking"}},
+        {"$lookup": {
+            "from": "transactions",
+            "localField": "account_id",
+            "foreignField": "account_id",
+            "as": "transactions"
+        }},
+        {"$unwind": "$transactions"},
+        {"$match": {
+            "transactions.amount": {"$lt": 0},
+            "transactions.date": {"$gte": start, "$lte": end},
+            "transactions.category": {"$in": categories}
+        }},
+        {"$group": {
+            "_id": "$transactions.category",
+            "total": {"$sum": "$transactions.amount"}
+        }},
+        {"$project": {"category": "$_id", "total": 1, "_id": 0}}
+    ]
+
+    results = list(db.accounts.aggregate(pipeline))
+    return results
+
 @app.get("/{user}/spending/percategory/all")
 async def spending_per_category(
     user: int,
@@ -136,7 +174,8 @@ async def transactions(
         {"$unwind": "$transactions"},
         {"$replaceRoot": {"newRoot": "$transactions"}},
         {"$set": {"_id": {"$toString": "$_id"}}},
-        {"$sort": {"transaction_date": 1}}  # use your actual date field
+        {"$sort": {"transaction_date": -1}},  # use your actual date field
+        {"$limit": 15}
     ]
 
     transactions = list(db.accounts.aggregate(pipeline))
