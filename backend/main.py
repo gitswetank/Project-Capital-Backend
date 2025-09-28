@@ -1,5 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo import MongoClient
+from bson import json_util
+import json
+
 
 app = FastAPI()
 
@@ -34,56 +38,109 @@ def get_db():
 @app.get("/{user}/spending/percategory")
 async def spending_per_category(
     user: int,
-    category: str = Query(...),
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
     db=Depends(get_db)
 ):
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
+    start = start_date
+    end = end_date
 
     pipeline = [
-        { "$match": { "customer_id": user, "type": "checking" } },  # only checking accounts
-        { "$lookup": {
+        {"$match": {"customer_id": user, "type": "checking"}},
+        {"$lookup": {
             "from": "transactions",
             "localField": "account_id",
             "foreignField": "account_id",
             "as": "transactions"
         }},
-        { "$unwind": "$transactions" },  # flatten transactions
-        { "$match": {
-            "transactions.amount": { "$lt": 0 },  # only negative spending
-            "transactions.date": { "$gte": start, "$lte": end }
+        {"$unwind": "$transactions"},
+        {"$match": {
+            "transactions.amount": {"$lt": 0},
+            "transactions.date": {"$gte": start, "$lte": end}
         }},
-        { "$group": {
+        {"$group": {
             "_id": "$transactions.category",
-            "total": { "$sum": "$transactions.amount" }  # negative totals
+            "total": {"$sum": "$transactions.amount"}
         }},
-        { "$project": {
-            "category": "$_id",
-            "total": 1,
-            "_id": 0
-        }}
+        {"$project": {"category": "$_id", "total": 1, "_id": 0}}
     ]
 
     results = list(db.accounts.aggregate(pipeline))
 
-    # Compute percentages
-    total_spent = -sum(r["total"] for r in results)  # total positive value of spending
+    total_spent = -sum(r["total"] for r in results)
+    for r in results:
+        r["percentage"] = round((-r["total"] / total_spent) * 100, 2) if total_spent else 0
+
+    return results
+
+@app.get("/{user}/spending/percategory/all")
+async def spending_per_category(
+    user: int,
+    db=Depends(get_db)
+):
+
+    pipeline = [
+        {"$match": {"customer_id": user, "type": "checking"}},
+        {"$lookup": {
+            "from": "transactions",
+            "localField": "account_id",
+            "foreignField": "account_id",
+            "as": "transactions"
+        }},
+        {"$unwind": "$transactions"},
+        {"$match": {
+            "transactions.amount": {"$lt": 0},
+        }},
+        {"$group": {
+            "_id": "$transactions.category",
+            "total": {"$sum": "$transactions.amount"}
+        }},
+        {"$project": {"category": "$_id", "total": 1, "_id": 0}}
+    ]
+
+    results = list(db.accounts.aggregate(pipeline))
+
+    total_spent = -sum(r["total"] for r in results)
     for r in results:
         r["percentage"] = round((-r["total"] / total_spent) * 100, 2) if total_spent else 0
 
     return results
 
 
-# --- Example Endpoint ---
-# @app.get("/{user}/spending/category/all")
-# async def get_customers(start_date, end_dat):
-#     return list(db.customers.find({}, {"_id": 0}))
+@app.get("/{user}/spending/transactions/all")
+async def transactions(
+    user: int,
+    db=Depends(get_db)
+):
+    # user_accounts = list(db.accounts.find({"customer_id": user}, {"account_id": 1}))
+    # account_ids = [a["account_id"] for a in user_accounts]
+    # print(user)
+    # print(account_ids)
+    # print(user_accounts)
+    # if not account_ids:
+    #     return []  # No accounts, return empty list
 
-# @app.get("/{user}/spending/percategory")
-# async def get_customers(category, start_date, end_dat):
-#     return list(db.customers.find({}, {"_id": 0}))
+    # 2. Get all transactions for these accounts
+    # transactions = list(
+    #     db.transactions.find({"account_id": {"$in": [11782, 11783, 11784]}}).sort("date", 1)
+    # )
+
+    pipeline = [
+        {"$match": {"customer_id": user}},  # matches your user_id
+        {"$lookup": {
+            "from": "transactions",
+            "localField": "account_id",
+            "foreignField": "account_id",
+            "as": "transactions"
+        }},
+        {"$unwind": "$transactions"},
+        {"$replaceRoot": {"newRoot": "$transactions"}},
+        {"$set": {"_id": {"$toString": "$_id"}}},
+        {"$sort": {"transaction_date": 1}}  # use your actual date field
+    ]
+
+    transactions = list(db.accounts.aggregate(pipeline))
+    return json.loads(json_util.dumps(transactions))
 
 @app.get("/transactions/grocery")
 async def root():

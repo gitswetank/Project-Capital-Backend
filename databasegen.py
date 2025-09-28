@@ -75,7 +75,7 @@ low_spending_cat = ['food', 'entertainment', 'utilities', 'transportation', 'sho
 high_spending_cat = ['housing', 'education', 'healthcare']
 card_type = ["credit", "debit"]
 
-start_date = datetime(1994, 1, 1)   # start year = 1994
+start_date = datetime(2027, 1, 1)   # start year = 2027
 days = 365                          # simulate 1 yea
 
 
@@ -87,14 +87,14 @@ for act in accounts:
         # Pick type of transaction
         for d in range(days):
             date = start_date + timedelta(days=d)
-            small_beta = np.random.beta(a=3, b=50) * 1000
+            small_beta = np.random.beta(a=3, b=50) * 300
             big_beta   = np.random.beta(a=5, b=1)  * 1500
             for _ in range(np.random.randint(1, 5)):  # 3 transactions per day
                 tx_type = np.random.choice(["spend_credit", "deposit_debit", "spend_debit"], 
                                            p=[0.85, 0.075, 0.075])
                 
                 if tx_type == "spend_credit":
-                    if np.random.rand() < 0.05:  # 5% chance of big spending
+                    if np.random.rand() < 0.03:  # 5% chance of big spending
                         category = random.choice(high_spending_cat)
                         amount = -big_beta
                     else:
